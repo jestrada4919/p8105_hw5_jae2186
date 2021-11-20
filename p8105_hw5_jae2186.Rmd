@@ -170,37 +170,65 @@ long_study_plot
 As noted by the spaghetti plot, the data for the control arm do not notably change over the course of the 8 week-long study period. However, the experimental arm appears to increase across most of the study participants with the linear fit line for the data showing an increase over time with a postive slope. While the data for the control group never exceed a value of 5.0, data in the experimental group exceed a 5.0 value for 6 study subject at least once over the course of the study. 
 
 # Problem 3
-The code chunk below loads the iris dataset from the tidyverse package and introduces some missing values in each column. The purpose of this problem is to fill in those missing values.
 
-```{r p3_}
-# set.seed(10)
-# 
-# iris_with_missing = iris %>% 
-#   map_df(~replace(.x, sample(1:150, 20), NA)) %>%
-#   mutate(Species = as.character(Species))
+This problem involves one method of cleaning up data by replacing missing values with reasonable values; in this case, data that is not available (NA) will be replaced with the mean of the variable. 
+First the data will be loaded.
+
+```{r p3_load_data}
+set.seed(10)
+
+iris_with_missing = iris %>%
+  map_df(~replace(.x, sample(1:150, 20), NA)) %>%
+  mutate(Species = as.character(Species)) %>% 
+  janitor::clean_names()
 ```
 
-There are two cases to address:
+The following code chunk provides a means of seeing the process for cleaning the data one variable at a time with the means calculated separately and fed into the data frame individually. For cases in which the variable is a character, i.e. for the species variables, the "virginica" species has been used. 
 
-For numeric variables, you should fill in missing values with the mean of non-missing values
-For character variables, you should fill in missing values with "virginica"
-Write a function that takes a vector as an argument; replaces missing values using the rules defined above; and returns the resulting vector. Apply this function to the columns of iris_with_missing using a map statement.
+```{r p3_no_function}
+slength_mean <- mean(iris_with_missing$sepal_length, na.rm = TRUE)
+swidth_mean <- mean(iris_with_missing$sepal_width, na.rm = TRUE)
+plength_mean <- mean(iris_with_missing$petal_length, na.rm = TRUE)
+pwidth_mean <- mean(iris_with_missing$petal_width, na.rm = TRUE)
 
-write a functio
+iris_no_function <-
+  iris_with_missing %>% 
+  mutate(sepal_length = replace_na(sepal_length, mean(sepal_length, na.rm = TRUE)),
+         sepal_width = replace_na(sepal_width, swidth_mean),
+         petal_length = replace_na(sepal_width, plength_mean),
+         petal_width = replace_na(petal_width, pwidth_mean),
+         species = replace_na(species, "virginica"))
 
-```{r}
-
-# fill_in_missing = function(vector){
-# 
-#   if(is.numeric) {
-#     ...
-#   }
-# 
-#   if(is.character){
-#     ...
-#   }
-# 
-# }
+view(iris_no_function)
 ```
-and if neither then spit out warning
+
+This last code chunk then uses a function using the `if... if else... else` construct to designate changes to be made to either numeric or character variables. The resulting data table is printed.
+
+```{r p3_function}
+fill_in_missing = function(df) {
+
+  if (is.numeric(df)) {
+    
+    mean_df = mean(df, na.rm = TRUE)
+    mean_df = round(mean_df, digits = 2)
+    replace_na(df, mean_df)
+    
+  }
+  
+  else if (is.character(df)) {
+
+    replace_na(df, "virginica")
+
+  }
+
+  else {
+    stop("Input must be either a numeric or a character vector.")
+  }
+  
+}
+
+iris_complete = map_df(iris_with_missing, fill_in_missing) 
+
+iris_complete
+```
 
