@@ -1,0 +1,206 @@
+---
+title: "p8105_hw5_jae2186"
+author: 'UNI: jae2186 (Jennifer Estrada)'
+date: "11/20/2021"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(rvest)
+library(httr)
+
+library(patchwork)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = 0.6,
+  out.width = "90%"
+)
+
+theme_set(theme_bw() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_color_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+# Problem 1
+
+<i>(Solved via method discussed in P8105 office hours on 11/15/2021.)</i>
+
+After collecting data on homicides throughout cities in the United States, the <i>Washington Post</i> made the data readily available. The data are uploaded and modified below with an overall discussion of the data and a deeper dive into the data for the city of Balitmore in Maryland.
+
+```{r p1_data}
+
+homicide_df <-
+  read_csv("./homicide-data.csv", na = c("", "Unknown")) %>% 
+  mutate(city_state = str_c(city, state),
+         resolution = case_when(disposition == "Closed without arrest" ~ "unsolved",
+                                disposition == "Open/No arrest"        ~ "unsolved",
+                                disposition == "Closed by arrest"      ~ "solved" )
+         ) %>% 
+  relocate(city_state) %>% 
+  filter(city_state != "TulsaAL")
+
+```
+
+The raw data is substantial as it consists of `r length(homicide_df$reported_date)` entries across `r unique(homicide_df$city_state) %>%  length()` unique cities (with the exception of an entry with an erroneous city and state combination). The data include variables to describe the homocide cases like the reported date of the homicide, first and last names of the victims as well as some demogrphic information on the victim, and whether or not the case was closed or is left open. 
+
+The following code focuses on data from a single city: Baltimore, MD. 
+
+```{r p1_baltimore}
+baltimore_df <-
+  homicide_df %>% 
+  filter(city_state == "BaltimoreMD")
+
+baltimore_summary <-
+  baltimore_df %>% 
+  summarize(unsolved = sum(resolution == "unsolved"),
+            n = n()
+            )
+
+baltimore_test <-
+  prop.test(
+    x = baltimore_summary %>%  pull(unsolved),
+    n = baltimore_summary %>%  pull(n))
+
+b_estimate <- 
+  baltimore_test %>% 
+  broom::tidy() %>% 
+  pull(estimate)
+```
+
+As derived above from the code above, during the timeframe of this investigation Baltimore had an unsolved homicide rate of `r round(b_estimate * 100, digits = 1)`%.
+
+The following codes then extends this kind of analysis across all of the cities available in the dataset and provides a plot with the data including error bars from the upper and lower confidence interval limits and in order of increasing proportion of unsolved homicide cases. 
+
+```{r p1_cities}
+
+prop_test_function = function(city_df) {
+  
+  city_summary <-
+    city_df %>% 
+    summarize(unsolved = sum(resolution == "unsolved"),
+              n = n()
+              )
+  
+  city_test <-
+    prop.test(
+      x = city_summary %>%  pull(unsolved),
+      n = city_summary %>%  pull(n))
+  
+  return(city_test)
+
+}
+
+
+results_df <- 
+  homicide_df %>% 
+  nest(data = uid:resolution) %>% 
+  mutate(
+    test_results = map(data, prop_test_function),
+    tidy_results = map(test_results, broom::tidy)
+  ) %>% 
+  select(city_state, tidy_results) %>% 
+  unnest(tidy_results) %>% 
+  select(city_state, estimate, starts_with("conf"))
+
+```
+
+
+```{r p1_plot}
+
+results_df %>% 
+  mutate(city_state = fct_reorder(city_state, estimate)) %>% 
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+```
+
+As shown in the plot, Chicago, IL has the most cases of unsolved homicide cases with Baltimore closer to this higher and the third most homicide cases while Richmond, VA has the fewest cases.
+
+# Problem 2
+
+For this problem we have been provided with a zip file containing several data files for participants in a longitudinal study in which weekly data was collected from subjects in both control and experimental study arms. The following code chunk extracts the data from each file and tidies it appropriately for subsequent plotting.
+
+```{r p2_data}
+long_study <-
+  tibble(files = list.files("./data")) %>% 
+  mutate(files = str_c("./data/", files),
+         data = map(files, read_csv),
+         files = list.files("./data"),
+         files = str_remove(files, ".csv")) %>% 
+  unnest(data) %>% 
+  pivot_longer(!files, names_to = "week", values_to = "data") %>% 
+  mutate(week = str_remove(week, "week_"),
+         week = as.numeric(week)) %>% 
+  separate(files, c("arm", "subject_ID"), "_") 
+  
+```
+
+The following plot is a product of the cleaned data and showcases the two study arms with data plotted for each subject over time. 
+
+```{r p2_plot}
+arm_names <- c(`con` = "Control",`exp` = "Experimental")
+
+long_study_plot <- 
+  ggplot(long_study, aes(x = week, y = data, 
+                         group = subject_ID, color = subject_ID)) +
+  geom_line() +
+  stat_summary(aes(group = 1), geom = "point", fun = mean) +
+  stat_smooth(aes(group = 1), method = lm, se = FALSE) +
+  facet_grid(.~arm, labeller = as_labeller(arm_names)) +
+  theme(legend.position = "none") +
+  labs(
+    title = "Longitudinal Study Results", 
+    subtitle = "Mean values provided with data points and linear models in thick blue", 
+    x = "Week",
+    y = "Data Values")
+
+long_study_plot
+```
+
+As noted by the spaghetti plot, the data for the control arm do not notably change over the course of the 8 week-long study period. However, the experimental arm appears to increase across most of the study participants with the linear fit line for the data showing an increase over time with a postive slope. While the data for the control group never exceed a value of 5.0, data in the experimental group exceed a 5.0 value for 6 study subject at least once over the course of the study. 
+
+# Problem 3
+The code chunk below loads the iris dataset from the tidyverse package and introduces some missing values in each column. The purpose of this problem is to fill in those missing values.
+
+```{r p3_}
+# set.seed(10)
+# 
+# iris_with_missing = iris %>% 
+#   map_df(~replace(.x, sample(1:150, 20), NA)) %>%
+#   mutate(Species = as.character(Species))
+```
+
+There are two cases to address:
+
+For numeric variables, you should fill in missing values with the mean of non-missing values
+For character variables, you should fill in missing values with "virginica"
+Write a function that takes a vector as an argument; replaces missing values using the rules defined above; and returns the resulting vector. Apply this function to the columns of iris_with_missing using a map statement.
+
+write a functio
+
+```{r}
+
+# fill_in_missing = function(vector){
+# 
+#   if(is.numeric) {
+#     ...
+#   }
+# 
+#   if(is.character){
+#     ...
+#   }
+# 
+# }
+```
+and if neither then spit out warning
+
